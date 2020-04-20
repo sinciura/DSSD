@@ -1,0 +1,32 @@
+module write_module(
+
+output reg [15:0]cont,
+
+input winc, wclk, wrst_n,
+
+output reg [15:0] wdata,
+
+output reg wfull);
+
+always @(posedge clk or negedge rst_n) begin
+
+if(wrst_n == 1) begin
+
+case(wfull) 
+
+0'bo: begin
+
+cont<=cont+1;
+
+
+
+
+
+
+
+
+
+
+
+
+
