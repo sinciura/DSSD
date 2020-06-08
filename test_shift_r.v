@@ -14,8 +14,11 @@ always #20 clk=~clk;
 initial
 begin
 
-in = 0;
+in =1;
 en=1;
+rst_n=0;
+#20;
+
 rst_n=1;
 #20;
 
