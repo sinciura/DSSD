@@ -67,7 +67,7 @@ read_module LLEGEIX (
 
 .rclk(clk10),
 
-.Rrst_n(Reset),//1 quan la memoria està buida.
+.Rrst_n(Reset),
 
 .rinc(rinc),
 
