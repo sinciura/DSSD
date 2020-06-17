@@ -2,9 +2,13 @@ module reloj(
 
 input clk, start_cond, stop_cond,reset, //entrades i sortides del mòdul.
 
+input [3:0]r_MHz, //(de 1 a 3 MHz)
+
 inout scl_t,
 
-output reg [4:0]contador);
+output reg [5:0]contador,
+
+output [5:0]canvi,final_);
 
 reg [2:0]state,next; //registres que guarden el valor de l'estat actual i de l'estat futur
 
@@ -18,6 +22,10 @@ s2 = 3'b010;
 
 assign scl_t = (scl == 1)?  1'bz : scl;//el que fa aquest assign es
 //posar scl_t a alta impedància quan val 1 
+
+assign canvi = (r_MHz == 1) ? 5'd4 : (r_MHz == 2) ? 5'd9 : (r_MHz == 3)  ? 5'd14 : 5'd0;
+
+assign final_ = (((canvi)<<1)+5'd1);
 
 //bloc always que indica que es  canvia d'estat al flanc de pujada del rellotge 
 //quan el reset està desactivat.Si el reset està activat l'estat
@@ -105,19 +113,19 @@ s1: begin
 
 contador <= contador + 5'd1; //el comptador es va incrementant fins que arriba a 10.
 
-if(contador>=5'd5) begin
+if(contador>=canvi) begin
 
 scl<=1'b0;
 
 end
 
-if(contador<5'd5) begin
+if(contador<canvi) begin
 
 scl<=1'b1;
 
 end
 
-if(contador == 5'd10) begin
+if(contador == final_ ) begin
 
 contador <= 1'b0;
 scl<=1'b1;

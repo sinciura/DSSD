@@ -1,0 +1,60 @@
+`timescale 1ns/1ns
+
+module test_i2c;
+
+reg clock_master, clock_slave, reset, r_w, start_cond;
+
+reg[3:0] valor_clk_MHz,freq_slave;
+
+reg [6:0]s_add;
+
+reg [7:0]data;
+
+reg a_b;
+
+
+i2c dut(clock_master, clock_slave, reset, r_w, start_cond, valor_clk_MHz, freq_slave, s_add, data, a_b);
+
+initial clock_master=0;
+always #500 clock_master=~clock_master;
+
+initial clock_slave=0;
+always #250 clock_slave=~clock_slave;
+
+initial 
+
+begin
+
+valor_clk_MHz = 1;
+freq_slave = 2;
+reset = 0;
+start_cond = 0;
+r_w = 0;
+s_add =7'b1110101;
+data = 8'b11101001;
+a_b=0; 
+
+#10000;
+
+reset = 1;
+start_cond = 1;
+
+#1000;
+
+start_cond = 0;
+
+#180000;
+
+a_b = 1;
+data = 8'b11001101;
+
+#10000;
+
+a_b=0;
+
+#50000000;
+
+$stop;
+
+end
+endmodule

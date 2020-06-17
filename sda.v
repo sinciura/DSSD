@@ -5,15 +5,21 @@ input r_w, reset, //bit d'entrada que indica si es vol
 
 input[7:0] data, //dada que es vol escriure al esclau.
 
+input altre_byte,//entrada que indica si es vol enviar un altre byte o no
+
 input[6:0] slave_a,//direcció del esclau. 7 bits.
 
 input clk, //clock del master.
 
-input [4:0]contador, //contador es una variable d'entrada que ve
+input [5:0]contador, //contador es una variable d'entrada que ve
 //del bloc que genera el SCL a partir del rellotge del master.
 //El bloc SDA es sincronitza amb el bloc SCL segons el valor del contador.
 
 input start, //condició de començament de comunicació
+
+input [5:0]canvi,final_,
+
+input [3:0] f_MHz,
 
 inout sda_m, //port SDA
 
@@ -21,14 +27,14 @@ output reg stop_cond); //condició de stop que genera el bloc sda del master
 //quan rep l'últim ack del slave. Està posada com a sortida perquè va
 //al bloc SCL del master.
 
-reg [2:0]state, next; //registre d'estat actual i estat futur.
+reg [3:0]state, next; //registre d'estat actual i estat futur.
 
 reg[4:0]contador_sa; //contador que es fa servir per gaurdar o enviar
 //dades bit a bit.
 
-//reg start_c;
+wire [5:0]c_low, c_high;
 
-reg sda; //registre que es fa servir per escriure a la línia
+reg sda,ack, a_b; //registre que es fa servir per escriure a la línia
 //de SDA del bus i2c.
 
 reg [7:0] lectura; //registre per guardar dades del slave.
@@ -36,16 +42,21 @@ reg [7:0] lectura; //registre per guardar dades del slave.
 assign sda_m = (sda == 1)?  1'bz : sda; //el que fa aquest assign es
 //posar sda a alta impedància quan val 1.
 
-parameter [2:0] //3 bits per definir estats.
+assign c_low = (final_-5'd2*f_MHz); //(SCL BAIX)
 
-idle = 3'b000,
-s1 = 3'b001,
-s2 = 3'b010,
-s3 = 3'b011,
-s4 = 3'b100,
-s5 = 3'b101,
-s6 = 3'b110,
-s7 = 3'b111;
+assign c_high = ((canvi-5'd2*f_MHz))-1; //(SDA ALT)
+
+parameter [3:0] //3 bits per definir estats.
+
+idle = 4'b0000,
+s1 = 4'b0001,
+s2 = 4'b0010,
+s3 = 4'b0011,
+s4 = 4'b0100,
+s5 = 4'b0101,
+s6 = 4'b0110,
+s7 = 4'b0111,
+s8 = 4'b1000;
 
 always @(posedge clk or negedge reset) begin 
 
@@ -63,7 +74,7 @@ end
 //de l'estat actual i el valor de les variables que es troben a la llista de
 //sensibilitat.
 
-always @(state or reset or contador or start or contador_sa or sda_m or stop_cond or r_w or sda) begin
+always @(state or reset or contador or start or contador_sa or sda_m or stop_cond or r_w or c_high or c_low or altre_byte) begin
 
 case(state)
 
@@ -84,7 +95,7 @@ end
 
 s1: begin
 
-if(contador == 4) next = s2;
+if(contador == c_high) next = s2;
 
 else next = s1;
 
@@ -96,7 +107,7 @@ end
 
 s2: begin
 
-if(contador_sa == 8 && contador == 7) next = s3;
+if(contador_sa == 8 && contador == c_low) next = s3;
 
 else next = s2;
 
@@ -110,7 +121,7 @@ end
 
 s3: begin
 
-if(contador == 2 && contador_sa == 0) begin
+if(contador == c_high && contador_sa == 0) begin
 
 if(sda_m!= 0 & sda_m!= 1) next = idle; //si sda te un valor indeterminat
 // el sistema va al idle.
@@ -121,7 +132,7 @@ if(sda_m == 0) begin //si s'ha fet ack per part del slave es passa a
 //avaluar el bit de r_w. Si val 0 es passa a l'estat d'escriptura,
 //sino a l'estat de lectura.
 
-sda<=sda_m;
+//sda<=sda_m;
 
 if(r_w == 0) next = s4;
 
@@ -146,7 +157,7 @@ end
 
 s4: begin
 
-if(contador_sa == 8 && contador == 7) next = s6;
+if(contador_sa == 8 && contador == c_low) next = s6;
 
 else next = s4;
 
@@ -158,7 +169,7 @@ end
 
 s5: begin
 
-if(contador_sa == 8 && contador == 7) next = s6;
+if(contador_sa == 8 && contador == c_low) next = s6;
 
 else next = s5;
 
@@ -170,18 +181,25 @@ end
 
 s6: begin
 
-if(contador== 1) begin
+if(contador == c_low) begin
 
-sda<=sda_m;
+if(ack!= 0 && ack!= 1) next = idle;
 
-if(sda_m!= 0 & sda_m!= 1) next = idle; //si del slave es rep un bit amb valor indeterminat el 
-//sistema passa al estat idle.
+else next = s6;
 
-else next = s7; //tant si el slave ha fet l'ack o no, es passa a l'estat 7, que es el de la condició de stop.
+if(ack == 0 && altre_byte == 1) begin 
+
+if(r_w == 0) next = s4;
+
+else next = s5;
 
 end
 
-else next = s6; // si contador no val 1 no es fa res.
+else next = s7;
+
+end
+
+else next = s6;
 
 end
 
@@ -240,13 +258,7 @@ end
 
 s1: begin
 
-if(contador== 2) begin
-
 sda<=0;
-
-end
-
-else sda<=sda;
 
 end
 
@@ -259,7 +271,9 @@ end
 
 s2: begin
 
-if(contador == 7) begin
+//sda<=1;
+
+if(contador == c_low) begin
  
 if(contador_sa == 7) begin //Quan es trasmeten els 7 bits d'adreça
 //es transmet el bit que indica que a continuació es vol fer una lectura
@@ -291,19 +305,20 @@ end
 s3: begin 
 
 contador_sa<=0;
-sda<=1;
+//sda<=1;
+
+if(contador == c_high) sda<=sda_m;
+
+else sda<=1;
 
 end
 
 s4: begin //Quan s'ha fet el ack per part del slave i r_w = 0
 //s'entra a aquest estat.
 
-if(contador == 7) begin //Quan el SCL es troba en estat baix es 
+if(contador == c_low) begin //Quan el SCL es troba en estat baix es 
 //transmet un nou bit del vector de dades d'entrades per el SCL.
 
-//if(contador_sa==8) contador_sa<= contador_sa+5'd1; //Per passar d'estat
-//s'incrementa el contador per últim cop.
- 
 if(contador_sa>0 || contador_sa<8) begin //va del de 1 a 7
 
 sda<=data[7-contador_sa]; //sda passa a valer data bit a bit.
@@ -321,9 +336,11 @@ s5: begin //Quan s'ha fet el ack per part del slave i r_w = 1
 
 sda<=1; //es posa sda a estat alt per llegir les dades que provenen de l'esclau.
 
-if(contador == 7) contador_sa<= contador_sa+5'd1; //cada cop que contador val 7 s'incrementa la posició del registre.
+if(contador == c_low) contador_sa<= contador_sa+5'd1; //cada cop que contador val 7 s'incrementa la posició del registre.
 
-if((contador == 2) && (contador_sa > 0 && contador_sa <=8)) begin //Quan contador val 2 SCL es troba en estat alt i la dada es estable.
+//antes 2
+
+if((contador == c_high) && (contador_sa > 0 && contador_sa <=8)) begin //Quan contador val 2 SCL es troba en estat alt i la dada es estable.
 								  //la posició anira entre 1 y 8, i com que les posicions del registre
                                                                   //van de 0 a 7, se li resta 1 a la posició. contador_sa ha d'estar entre 1 i 8
                                                                   //i no 0 i 7 perquè l primera dada de l'esclau arriba quan contador_sa val 1.
@@ -338,9 +355,13 @@ end
 
 s6: begin 
 
+contador_sa<=0;
+
 sda<=1;
 
-contador_sa<=contador_sa;
+if(contador == (c_high-1)) ack<=sda_m;
+
+else ack<=ack;
 
 end
 
@@ -349,9 +370,15 @@ end
 
 s7: begin //condición de stop.
 
+if(contador == c_high+1) begin
+
 sda<=1;
 stop_cond<=1;
 contador_sa <=0;
+
+end
+
+else sda<=sda_m;
 
 end
 

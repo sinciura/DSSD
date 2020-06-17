@@ -8,10 +8,14 @@ input reset, //reset
 
 input clk, //rellotge del esclau
 
+input [3:0]freq_MHz,
+
 output reg [7:0]dada); //registre per guardar la dada que envia el master.
 
 reg sda; //registre que es fa servir per escriure a la línia
 //de SDA del bus i2c.
+
+reg stop;
 
 reg[2:0]state,next; //registre d'estat actual i estat futur.
 
@@ -20,13 +24,23 @@ reg [7:0]add; //registre que es fa servir per comprovar que l'adreça que envia e
 
 //reg [7:0]dada; //registre per guardar la dada que envia el master.
 
-reg [4:0]c,contador; //c es fa servir per guardar el bit que ve en un interval de rellotge a la
+reg [5:0]c,contador; //c es fa servir per guardar el bit que ve en un interval de rellotge a la
 //posicio determinada dels vectors add i dada. Contador sincronitza les dades del slave amb el SCL.
 //Contador va entre 0 i 10, ja que un interval del SCL equival a 10 intervals del slave. (1 MHz).
 
 reg [4:0]igualtat; //aquesta variable determina si l'adreça d'esclau enviada pel master es correspon amb la del esclau.
 
 reg scl_previ; //registre que es fa servir per sincronitzar l'esclau amb el scl.
+
+reg sda_previ;
+
+wire[5:0]canvi,c_high,c_low; //maxim valor del contador a un cicle.
+
+assign canvi = (freq_MHz == 1) ? 5'd4 : (freq_MHz == 2) ? 5'd9 : (freq_MHz == 3)  ? 5'd14 : 5'd0;
+
+assign c_high = (canvi-(5'd2*freq_MHz))-5'd1;//(SCL 1)
+
+assign c_low = (canvi+(5'd2*freq_MHz));//provisional.(SCL 0)
 
 parameter [3:0]
 
@@ -61,7 +75,7 @@ end
 //de l'estat actual i el valor de les variables que es troben a la llista de
 //sensibilitat.
 
-always @(contador or reset or state or igualtat or sda or sda_s or c or add) begin
+always @(contador or reset or state or igualtat or sda or sda_s or c or add or c_high or c_low) begin
 
 case(state)
 
@@ -87,7 +101,7 @@ end
 
 s1: begin
 
-if(c == 8 && contador == 5) next = s3;
+if(c == 8 && contador == (c_low-1)) next = s3;
 
 else next = s1;
 
@@ -113,7 +127,7 @@ end
 
 s4: begin
 
-if(igualtat == 1 && contador == 2) begin
+if(igualtat == 1 && contador == c_low) begin
 
 if (add[0]==1) next = s6;
 
@@ -131,7 +145,7 @@ end
 
 s5: begin
 
-if(c == 8 && contador == 6) next = s7;
+if(c == 8 && contador == c_low) next = s7;
 
 else next=s5;
 
@@ -143,7 +157,7 @@ end
 
 s6: begin
 
-if(c == 8 && contador == 6) next = s7;
+if(c == 8 && contador == c_low) next = s7;
 
 else next=s6;
 
@@ -153,7 +167,7 @@ end
  
 s7: begin
 
-if(contador == 0) next= s2;
+if(contador == c_low) next = s2;
 
 else next = s7;
 
@@ -163,9 +177,21 @@ end
 
 s2: begin
 
-if (sda_s == 1) next = idle;
+if(stop == 1) next = idle;
+
+else begin
+
+if(contador == c_low) begin
+
+if(add[0] == 0) next = s5;
+
+else next = s4;
+
+end
 
 else next = s2;
+
+end
 
 end
 
@@ -188,6 +214,7 @@ if(reset == 0) begin
 contador<=0;
 igualtat<=0;
 sda<=1;
+stop<=0;
 c<=0;
 
 end
@@ -205,6 +232,8 @@ scl_previ<=scl;
 
 if((scl_previ == 0) && (scl==1)) contador<=0;
 
+//if((scl_previ == 1) && (scl==0)) canvi<=(contador-1); //4 en este caso.
+
 else contador<=contador + 5'd1;
 
 case(next)
@@ -214,6 +243,7 @@ idle: begin
 sda<=1;
 contador<=contador;
 c<=c;
+stop<=0;
 
 end
 
@@ -223,9 +253,9 @@ end
 
 s1: begin 
 
-if(contador == 6) c<= c+5'd1; //Quan contador val 6 s'avança una posició del registre. 
+if(contador == c_low) c<= c+5'd1; //Quan contador val 6 s'avança una posició del registre. 
 
-if(contador == 1 && c > 0) begin //la dada es guarda al registre quan contador val 1 pq SCL
+if(contador == c_high && c > 0) begin //la dada es guarda al registre quan contador val 1 pq SCL
                                  //es troba en un estat alt, que és on les dades són estables.
 if (c<=8) add[8-(c)]<=sda_s;     
 
@@ -256,12 +286,7 @@ c<=0;
 
 end
 
-//Quan es passi al següent estat(contador == 2) s'allibera la línia.
-
-if (contador == 2) sda<=1;
-
 end
-
 
 //si r_w = 0, es passa a aquest estat. En aquest estat es guarda sda al registre dada.
 
@@ -269,7 +294,7 @@ s5: begin
 
 sda<=1;
 
-if(contador == 1) begin //quan contador sigui 1 SCL es troba en estat alt, es guarda SDA a una posició de dada
+if(contador == c_high) begin //quan contador sigui 1 SCL es troba en estat alt, es guarda SDA a una posició de dada
 		        //que va augmentant, però només es guarda SDA a dada si c es menor que 8. Quan aquest
                         //sigui igual a 8 es canvia d'estat.
 
@@ -285,7 +310,7 @@ end
 
 s6: begin 
 
-if(contador == 6) begin //quan contador sigui 6 SCL es troba en estat baix i per tant es canvia 
+if(contador == c_low) begin //quan contador sigui 6 SCL es troba en estat baix i per tant es canvia 
 			//el bit que s'envia per SDA.
 
 if(c<8) sda<=dato_esc[7-c]; //Mentre c sigui menor que 8 s'aniràn enviant els bits de la dada de l'esclau.
@@ -302,14 +327,33 @@ s7: begin //2ndo ack.
 
 c<=0;
 sda<=0;
- 
+
 end
 
 //Estat de condició de stop. SDA s'allibera, ja que la condició de stop la genera el master.
 
 s2: begin
 
-sda<=1; //alta impedancia
+sda<=1;
+
+sda_previ<=sda_s;
+
+//if(contador != c_low) begin
+
+if(contador >= 0 && contador << canvi) begin
+
+if(sda_previ == 0 && sda_s==1) begin
+
+stop <=1;
+sda<=1;
+
+end
+
+else stop <=0;
+
+end
+
+//end
 
 end
 
